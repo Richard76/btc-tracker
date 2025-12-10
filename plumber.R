@@ -146,6 +146,17 @@ function() {
       color: #64748b;
       font-size: 0.8rem;
     }
+    .warning {
+      background: #7f1d1d;
+      border: 2px solid #ef4444;
+      color: #fca5a5;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin: 15px 0;
+      font-weight: bold;
+      display: none;
+    }
+    .warning.show { display: block; }
   </style>
 </head>
 <body>
@@ -153,6 +164,7 @@ function() {
     <h1>Bitcoin Price Tracker</h1>
     <div class="price-display" id="current-price">$%s</div>
     <div class="timestamp" id="last-update">Last update: Loading...</div>
+    <div class="warning" id="dip-warning">WARNING: Price below lower-half average - significant dip detected!</div>
 
     <div class="stats">
       <div class="stat-card">
@@ -171,6 +183,10 @@ function() {
         <div class="stat-label">Next Update</div>
         <div class="stat-value" id="countdown">60</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">24h Percentile</div>
+        <div class="stat-value" id="percentile">-</div>
+      </div>
     </div>
 
     <div id="chart"></div>
@@ -182,9 +198,20 @@ function() {
 
   <script>
     let priceMean = null;
+    let lowerHalfMean = null;
+    let priceHistory = [];
 
     function formatPrice(price) {
       return "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function calculatePercentile(prices, currentPrice) {
+      const sorted = [...prices].sort((a, b) => a - b);
+      let count = 0;
+      for (const p of sorted) {
+        if (p < currentPrice) count++;
+      }
+      return Math.round((count / sorted.length) * 100);
     }
 
     function updateChart() {
@@ -200,10 +227,15 @@ function() {
           // Update stats
           document.getElementById("data-points").textContent = data.data_points;
           if (prices.length > 0) {
+            priceHistory = prices; // Store globally for percentile
             document.getElementById("high-price").textContent = formatPrice(Math.max(...prices));
             document.getElementById("low-price").textContent = formatPrice(Math.min(...prices));
             // Calculate mean for color coding
             priceMean = prices.reduce((a, b) => a + b, 0) / prices.length;
+            // Calculate lower half average for warning
+            const sorted = [...prices].sort((a, b) => a - b);
+            const lowerHalf = sorted.slice(0, Math.ceil(sorted.length / 2));
+            lowerHalfMean = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
           }
 
           if (timestamps.length === 0) return;
@@ -244,11 +276,29 @@ function() {
         .then(r => r.json())
         .then(data => {
           const priceEl = document.getElementById("current-price");
+          const warningEl = document.getElementById("dip-warning");
           priceEl.textContent = formatPrice(data.price_usd);
+
           // Color green if above mean, red if below
           if (priceMean !== null) {
             priceEl.style.color = data.price_usd >= priceMean ? "#10b981" : "#ef4444";
           }
+
+          // Show warning if below lower-half average
+          if (lowerHalfMean !== null && priceHistory.length >= 2) {
+            if (data.price_usd < lowerHalfMean) {
+              warningEl.classList.add("show");
+            } else {
+              warningEl.classList.remove("show");
+            }
+          }
+
+          // Calculate and show percentile
+          if (priceHistory.length >= 2) {
+            const pct = calculatePercentile(priceHistory, data.price_usd);
+            document.getElementById("percentile").textContent = pct + "%";
+          }
+
           document.getElementById("last-update").textContent = "Last update: " + data.timestamp;
           updateChart();
         });
