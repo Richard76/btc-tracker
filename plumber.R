@@ -55,7 +55,7 @@ function() {
   list(
     status = "ok",
     service = "Crypto Price Tracker",
-    version = "2.1.0",
+    version = "2.2.0",
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"),
     source = "Supabase"
   )
@@ -94,6 +94,68 @@ function() {
   prices <- lapply(symbols, get_latest_price)
   names(prices) <- symbols
   prices
+}
+
+#* Get five-number summary statistics for a symbol
+#* @param symbol Coin symbol
+#* @param range Time range: 24h, 7d, 30d
+#* @get /stats
+function(symbol = "BTC", range = "24h") {
+  limit <- range_to_limit(range)
+  data <- fetch_prices(toupper(symbol), limit)
+
+  if (is.null(data) || nrow(data) == 0) {
+    return(list(
+      symbol = toupper(symbol),
+      range = range,
+      data_points = 0,
+      error = "No data available"
+    ))
+  }
+
+  prices <- data$price_usd
+  n <- length(prices)
+
+  # Five-number summary
+  sorted <- sort(prices)
+  min_val <- sorted[1]
+  max_val <- sorted[n]
+  median_val <- median(prices)
+  q1 <- quantile(prices, 0.25, names = FALSE)
+  q3 <- quantile(prices, 0.75, names = FALSE)
+
+  # Additional stats
+  mean_val <- mean(prices)
+  sd_val <- sd(prices)
+  iqr <- q3 - q1
+  current <- prices[1]  # Most recent (data is desc sorted)
+
+  # Percentile of current price
+  pct_rank <- sum(prices < current) / n * 100
+
+  list(
+    symbol = toupper(symbol),
+    range = range,
+    data_points = n,
+    current = current,
+    five_number_summary = list(
+      min = min_val,
+      q1 = q1,
+      median = median_val,
+      q3 = q3,
+      max = max_val
+    ),
+    additional = list(
+      mean = mean_val,
+      std_dev = sd_val,
+      iqr = iqr,
+      percentile = round(pct_rank, 1)
+    ),
+    timestamp_range = list(
+      oldest = data$timestamp[n],
+      newest = data$timestamp[1]
+    )
+  )
 }
 
 #* Serve the dashboard HTML
