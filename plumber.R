@@ -8,6 +8,16 @@ library(jsonlite)
 SUPABASE_URL <- "https://kzltorgncwddsjiqbooh.supabase.co"
 SUPABASE_KEY <- "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6bHRvcmduY3dkZHNqaXFib29oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MzMyMDQsImV4cCI6MjA4MDIwOTIwNH0.RQGSeITtZXyZI-npBLyj0rZXWXjQ8mdqkrSO6VovBQE"
 
+# Convert range to limit
+range_to_limit <- function(range) {
+  switch(range,
+    "24h" = 1440,
+    "7d" = 10080,
+    "30d" = 43200,
+    1440  # default
+  )
+}
+
 # Fetch prices from Supabase using curl
 fetch_prices <- function(symbol = "BTC", limit = 1440) {
   tryCatch({
@@ -45,7 +55,7 @@ function() {
   list(
     status = "ok",
     service = "Crypto Price Tracker",
-    version = "2.0.0",
+    version = "2.1.0",
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"),
     source = "Supabase"
   )
@@ -58,20 +68,22 @@ function(symbol = "BTC") {
   get_latest_price(toupper(symbol))
 }
 
-#* Get price history for a symbol
+#* Get price history for a symbol with time range
 #* @param symbol Coin symbol
-#* @param limit Number of records (default 1440 = 24 hours)
+#* @param range Time range: 24h, 7d, 30d
 #* @get /history
-function(symbol = "BTC", limit = 1440) {
-  data <- fetch_prices(toupper(symbol), as.numeric(limit))
+function(symbol = "BTC", range = "24h") {
+  limit <- range_to_limit(range)
+  data <- fetch_prices(toupper(symbol), limit)
   if (!is.null(data) && nrow(data) > 0) {
     list(
       symbol = toupper(symbol),
+      range = range,
       data_points = nrow(data),
       history = data
     )
   } else {
-    list(symbol = toupper(symbol), data_points = 0, history = data.frame())
+    list(symbol = toupper(symbol), range = range, data_points = 0, history = data.frame())
   }
 }
 
@@ -109,24 +121,38 @@ function() {
       margin-bottom: 10px;
       color: #f59e0b;
     }
-    .coin-selector {
+    .selector-row {
       display: flex;
-      gap: 10px;
+      gap: 20px;
       margin: 20px 0;
       flex-wrap: wrap;
+      align-items: center;
     }
-    .coin-btn {
-      padding: 10px 20px;
+    .selector-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .selector-label {
+      color: #64748b;
+      font-size: 0.8rem;
+      margin-right: 8px;
+      align-self: center;
+    }
+    .coin-btn, .range-btn {
+      padding: 8px 16px;
       border: 2px solid #334155;
       background: #1e293b;
       color: #f1f5f9;
-      border-radius: 8px;
+      border-radius: 6px;
       cursor: pointer;
       font-weight: bold;
+      font-size: 0.9rem;
       transition: all 0.2s;
     }
-    .coin-btn:hover { border-color: #f59e0b; }
+    .coin-btn:hover, .range-btn:hover { border-color: #f59e0b; }
     .coin-btn.active { border-color: #f59e0b; background: #f59e0b; color: #0f172a; }
+    .range-btn.active { border-color: #10b981; background: #10b981; color: #0f172a; }
     .price-display {
       font-size: 3rem;
       font-weight: bold;
@@ -146,18 +172,18 @@ function() {
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 15px;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
       margin: 20px 0;
     }
     .stat-card {
       background: #1e293b;
-      padding: 15px;
+      padding: 12px;
       border-radius: 8px;
       text-align: center;
     }
-    .stat-label { color: #64748b; font-size: 0.8rem; }
-    .stat-value { font-size: 1.2rem; font-weight: bold; margin-top: 5px; }
+    .stat-label { color: #64748b; font-size: 0.75rem; }
+    .stat-value { font-size: 1.1rem; font-weight: bold; margin-top: 4px; }
     .footer {
       text-align: center;
       margin-top: 30px;
@@ -181,14 +207,23 @@ function() {
   <div class="container">
     <h1>Crypto Price Tracker</h1>
 
-    <div class="coin-selector">
-      <button class="coin-btn active" data-symbol="BTC">BTC</button>
-      <button class="coin-btn" data-symbol="ETH">ETH</button>
-      <button class="coin-btn" data-symbol="SOL">SOL</button>
-      <button class="coin-btn" data-symbol="LINK">LINK</button>
-      <button class="coin-btn" data-symbol="AVAX">AVAX</button>
-      <button class="coin-btn" data-symbol="POL">POL</button>
-      <button class="coin-btn" data-symbol="NEAR">NEAR</button>
+    <div class="selector-row">
+      <div class="selector-group">
+        <span class="selector-label">COIN:</span>
+        <button class="coin-btn active" data-symbol="BTC">BTC</button>
+        <button class="coin-btn" data-symbol="ETH">ETH</button>
+        <button class="coin-btn" data-symbol="SOL">SOL</button>
+        <button class="coin-btn" data-symbol="LINK">LINK</button>
+        <button class="coin-btn" data-symbol="AVAX">AVAX</button>
+        <button class="coin-btn" data-symbol="POL">POL</button>
+        <button class="coin-btn" data-symbol="NEAR">NEAR</button>
+      </div>
+      <div class="selector-group">
+        <span class="selector-label">RANGE:</span>
+        <button class="range-btn active" data-range="24h">24H</button>
+        <button class="range-btn" data-range="7d">7D</button>
+        <button class="range-btn" data-range="30d">30D</button>
+      </div>
     </div>
 
     <div class="price-display" id="current-price">Loading...</div>
@@ -201,20 +236,24 @@ function() {
         <div class="stat-value" id="data-points">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">24h High</div>
+        <div class="stat-label">High</div>
         <div class="stat-value" id="high-price">-</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">24h Low</div>
+        <div class="stat-label">Low</div>
         <div class="stat-value" id="low-price">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Mean</div>
+        <div class="stat-value" id="mean-price">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Percentile</div>
+        <div class="stat-value" id="percentile">-</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Next Update</div>
         <div class="stat-value" id="countdown">60</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">24h Percentile</div>
-        <div class="stat-value" id="percentile">-</div>
       </div>
     </div>
 
@@ -227,6 +266,7 @@ function() {
 
   <script>
     let currentSymbol = "BTC";
+    let currentRange = "24h";
     let priceMean = null;
     let lowerHalfMean = null;
     let priceHistory = [];
@@ -249,11 +289,14 @@ function() {
     }
 
     function updateChart() {
-      fetch("/history?symbol=" + currentSymbol)
+      fetch("/history?symbol=" + currentSymbol + "&range=" + currentRange)
         .then(r => r.json())
         .then(data => {
           const history = data.history;
-          if (!history || !history.timestamp || history.timestamp.length === 0) return;
+          if (!history || !history.timestamp || history.timestamp.length === 0) {
+            document.getElementById("data-points").textContent = "0";
+            return;
+          }
 
           const timestamps = history.timestamp;
           const prices = history.price_usd;
@@ -261,9 +304,12 @@ function() {
           document.getElementById("data-points").textContent = data.data_points;
           if (prices && prices.length > 0) {
             priceHistory = prices;
-            document.getElementById("high-price").textContent = formatPrice(Math.max(...prices));
-            document.getElementById("low-price").textContent = formatPrice(Math.min(...prices));
+            const high = Math.max(...prices);
+            const low = Math.min(...prices);
             priceMean = prices.reduce((a, b) => a + b, 0) / prices.length;
+            document.getElementById("high-price").textContent = formatPrice(high);
+            document.getElementById("low-price").textContent = formatPrice(low);
+            document.getElementById("mean-price").textContent = formatPrice(priceMean);
             const sorted = [...prices].sort((a, b) => a - b);
             const lowerHalf = sorted.slice(0, Math.ceil(sorted.length / 2));
             lowerHalfMean = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
@@ -285,7 +331,7 @@ function() {
             font: { color: "#f1f5f9" },
             xaxis: { gridcolor: "#334155", title: "Time" },
             yaxis: { gridcolor: "#334155", title: "Price (USD)", tickprefix: "$" },
-            margin: { t: 20, r: 20, b: 50, l: 70 }
+            margin: { t: 20, r: 20, b: 50, l: 80 }
           };
 
           Plotly.newPlot("chart", [trace], layout, {responsive: true});
@@ -326,16 +372,37 @@ function() {
       document.querySelectorAll(".coin-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.symbol === symbol);
       });
+      resetStats();
+      updatePrice();
+    }
+
+    function selectRange(range) {
+      currentRange = range;
+      document.querySelectorAll(".range-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.range === range);
+      });
+      resetStats();
+      updateChart();
+    }
+
+    function resetStats() {
       priceMean = null;
       lowerHalfMean = null;
       priceHistory = [];
       document.getElementById("current-price").textContent = "Loading...";
       document.getElementById("dip-warning").classList.remove("show");
-      updatePrice();
+      document.getElementById("high-price").textContent = "-";
+      document.getElementById("low-price").textContent = "-";
+      document.getElementById("mean-price").textContent = "-";
+      document.getElementById("percentile").textContent = "-";
     }
 
     document.querySelectorAll(".coin-btn").forEach(btn => {
       btn.addEventListener("click", () => selectCoin(btn.dataset.symbol));
+    });
+
+    document.querySelectorAll(".range-btn").forEach(btn => {
+      btn.addEventListener("click", () => selectRange(btn.dataset.range));
     });
 
     let countdown = 60;
