@@ -168,8 +168,8 @@ function() {
         <div class="stat-value" id="low-price">-</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Auto-refresh</div>
-        <div class="stat-value">60s</div>
+        <div class="stat-label">Next Update</div>
+        <div class="stat-value" id="countdown">60</div>
       </div>
     </div>
 
@@ -243,11 +243,23 @@ function() {
         });
     }
 
+    // Countdown timer
+    let countdown = 60;
+
+    function updateCountdown() {
+      countdown--;
+      document.getElementById("countdown").textContent = countdown;
+      if (countdown <= 0) {
+        updatePrice();
+        countdown = 60;
+      }
+    }
+
     // Initial load
     updatePrice();
 
-    // Auto-refresh every 60 seconds
-    setInterval(updatePrice, 60000);
+    // Tick countdown every second
+    setInterval(updateCountdown, 1000);
   </script>
 </body>
 </html>
