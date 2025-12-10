@@ -1,98 +1,98 @@
-# BTC Price Tracker API
-# R + Plumber + Plotly
+# Crypto Price Tracker API
+# R + Plumber + Supabase
 
 library(plumber)
 library(jsonlite)
 
-# In-memory price storage (resets on restart)
-price_history <- data.frame(
-  timestamp = as.POSIXct(character()),
-  price = numeric(),
-  stringsAsFactors = FALSE
-)
+# Supabase config
+SUPABASE_URL <- "https://kzltorgncwddsjiqbooh.supabase.co"
+SUPABASE_KEY <- "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6bHRvcmduY3dkZHNqaXFib29oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MzMyMDQsImV4cCI6MjA4MDIwOTIwNH0.RQGSeITtZXyZI-npBLyj0rZXWXjQ8mdqkrSO6VovBQE"
 
-# Fetch current BTC price from CoinGecko
-fetch_btc_price <- function() {
+# Fetch prices from Supabase using curl
+fetch_prices <- function(symbol = "BTC", limit = 1440) {
   tryCatch({
-    url <- "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
-    response <- readLines(url, warn = FALSE)
-    data <- fromJSON(response)
-    return(data$bitcoin$usd)
+    url <- paste0(SUPABASE_URL, "/rest/v1/crypto_prices?symbol=eq.", symbol,
+                  "&order=timestamp.desc&limit=", limit)
+    cmd <- sprintf('curl -s "%s" -H "apikey: %s" -H "Authorization: Bearer %s"',
+                   url, SUPABASE_KEY, SUPABASE_KEY)
+    response <- system(cmd, intern = TRUE)
+    data <- fromJSON(paste(response, collapse = ""))
+    return(data)
   }, error = function(e) {
-    return(NA)
+    return(NULL)
   })
 }
 
-# Update price history
-update_price <- function() {
-  price <- fetch_btc_price()
-  if (!is.na(price)) {
-    new_row <- data.frame(
-      timestamp = Sys.time(),
-      price = price,
-      stringsAsFactors = FALSE
-    )
-    price_history <<- rbind(price_history, new_row)
-    # Keep only last 1440 points (24 hours at 1 min intervals)
-    if (nrow(price_history) > 1440) {
-      price_history <<- tail(price_history, 1440)
-    }
+# Get latest price for a symbol
+get_latest_price <- function(symbol = "BTC") {
+  data <- fetch_prices(symbol, 1)
+  if (!is.null(data) && nrow(data) > 0) {
+    return(list(
+      symbol = data$symbol[1],
+      price_usd = data$price_usd[1],
+      timestamp = data$timestamp[1]
+    ))
   }
-  return(price)
+  return(list(symbol = symbol, price_usd = NA, timestamp = NA))
 }
 
-#* @apiTitle BTC Price Tracker
-#* @apiDescription Real-time Bitcoin price tracking with charts
+#* @apiTitle Crypto Price Tracker
+#* @apiDescription Multi-coin price tracking with Supabase storage
 
 #* Health check
 #* @get /health
 function() {
   list(
     status = "ok",
-    service = "BTC Price Tracker",
-    version = "1.0.0",
+    service = "Crypto Price Tracker",
+    version = "2.0.0",
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"),
-    data_points = nrow(price_history)
+    source = "Supabase"
   )
 }
 
-#* Get current BTC price
+#* Get current price for a symbol
+#* @param symbol Coin symbol (BTC, ETH, SOL, LINK, AVAX, POL, NEAR)
 #* @get /price
-function() {
-  price <- update_price()
-  list(
-    symbol = "BTC",
-    price_usd = price,
-    timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S UTC", tz = "UTC"),
-    source = "CoinGecko"
-  )
+function(symbol = "BTC") {
+  get_latest_price(toupper(symbol))
 }
 
-#* Get price history
+#* Get price history for a symbol
+#* @param symbol Coin symbol
+#* @param limit Number of records (default 1440 = 24 hours)
 #* @get /history
-function() {
-  if (nrow(price_history) == 0) {
-    update_price()
+function(symbol = "BTC", limit = 1440) {
+  data <- fetch_prices(toupper(symbol), as.numeric(limit))
+  if (!is.null(data) && nrow(data) > 0) {
+    list(
+      symbol = toupper(symbol),
+      data_points = nrow(data),
+      history = data
+    )
+  } else {
+    list(symbol = toupper(symbol), data_points = 0, history = data.frame())
   }
-  list(
-    symbol = "BTC",
-    data_points = nrow(price_history),
-    history = price_history
-  )
+}
+
+#* Get all latest prices
+#* @get /prices
+function() {
+  symbols <- c("BTC", "ETH", "SOL", "LINK", "AVAX", "POL", "NEAR")
+  prices <- lapply(symbols, get_latest_price)
+  names(prices) <- symbols
+  prices
 }
 
 #* Serve the dashboard HTML
 #* @get /
 #* @serializer html
 function() {
-  # Update price on page load
-  current_price <- update_price()
-
-  html <- sprintf('
+  html <- '
 <!DOCTYPE html>
 <html>
 <head>
-  <title>BTC Price Tracker</title>
+  <title>Crypto Price Tracker</title>
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -109,6 +109,24 @@ function() {
       margin-bottom: 10px;
       color: #f59e0b;
     }
+    .coin-selector {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    .coin-btn {
+      padding: 10px 20px;
+      border: 2px solid #334155;
+      background: #1e293b;
+      color: #f1f5f9;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+    .coin-btn:hover { border-color: #f59e0b; }
+    .coin-btn.active { border-color: #f59e0b; background: #f59e0b; color: #0f172a; }
     .price-display {
       font-size: 3rem;
       font-weight: bold;
@@ -161,8 +179,19 @@ function() {
 </head>
 <body>
   <div class="container">
-    <h1>Bitcoin Price Tracker</h1>
-    <div class="price-display" id="current-price">$%s</div>
+    <h1>Crypto Price Tracker</h1>
+
+    <div class="coin-selector">
+      <button class="coin-btn active" data-symbol="BTC">BTC</button>
+      <button class="coin-btn" data-symbol="ETH">ETH</button>
+      <button class="coin-btn" data-symbol="SOL">SOL</button>
+      <button class="coin-btn" data-symbol="LINK">LINK</button>
+      <button class="coin-btn" data-symbol="AVAX">AVAX</button>
+      <button class="coin-btn" data-symbol="POL">POL</button>
+      <button class="coin-btn" data-symbol="NEAR">NEAR</button>
+    </div>
+
+    <div class="price-display" id="current-price">Loading...</div>
     <div class="timestamp" id="last-update">Last update: Loading...</div>
     <div class="warning" id="dip-warning">WARNING: Price below lower-half average - significant dip detected!</div>
 
@@ -192,17 +221,22 @@ function() {
     <div id="chart"></div>
 
     <div class="footer">
-      Powered by R + Plumber | Data from CoinGecko | Auto-updates every minute
+      Powered by R + Plumber + Supabase | Data updates every minute | 7 coins tracked
     </div>
   </div>
 
   <script>
+    let currentSymbol = "BTC";
     let priceMean = null;
     let lowerHalfMean = null;
     let priceHistory = [];
 
     function formatPrice(price) {
-      return "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      if (price >= 1) {
+        return "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      } else {
+        return "$" + price.toFixed(6);
+      }
     }
 
     function calculatePercentile(prices, currentPrice) {
@@ -215,32 +249,26 @@ function() {
     }
 
     function updateChart() {
-      fetch("/history")
+      fetch("/history?symbol=" + currentSymbol)
         .then(r => r.json())
         .then(data => {
           const history = data.history;
-          if (!history) return;
+          if (!history || !history.timestamp || history.timestamp.length === 0) return;
 
-          const timestamps = history.timestamp || [];
-          const prices = history.price || [];
+          const timestamps = history.timestamp;
+          const prices = history.price_usd;
 
-          // Update stats
           document.getElementById("data-points").textContent = data.data_points;
-          if (prices.length > 0) {
-            priceHistory = prices; // Store globally for percentile
+          if (prices && prices.length > 0) {
+            priceHistory = prices;
             document.getElementById("high-price").textContent = formatPrice(Math.max(...prices));
             document.getElementById("low-price").textContent = formatPrice(Math.min(...prices));
-            // Calculate mean for color coding
             priceMean = prices.reduce((a, b) => a + b, 0) / prices.length;
-            // Calculate lower half average for warning
             const sorted = [...prices].sort((a, b) => a - b);
             const lowerHalf = sorted.slice(0, Math.ceil(sorted.length / 2));
             lowerHalfMean = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
           }
 
-          if (timestamps.length === 0) return;
-
-          // Plot chart
           const trace = {
             x: timestamps,
             y: prices,
@@ -255,15 +283,8 @@ function() {
             paper_bgcolor: "#1e293b",
             plot_bgcolor: "#1e293b",
             font: { color: "#f1f5f9" },
-            xaxis: {
-              gridcolor: "#334155",
-              title: "Time"
-            },
-            yaxis: {
-              gridcolor: "#334155",
-              title: "Price (USD)",
-              tickprefix: "$"
-            },
+            xaxis: { gridcolor: "#334155", title: "Time" },
+            yaxis: { gridcolor: "#334155", title: "Price (USD)", tickprefix: "$" },
             margin: { t: 20, r: 20, b: 50, l: 70 }
           };
 
@@ -272,41 +293,52 @@ function() {
     }
 
     function updatePrice() {
-      fetch("/price")
+      fetch("/price?symbol=" + currentSymbol)
         .then(r => r.json())
         .then(data => {
           const priceEl = document.getElementById("current-price");
           const warningEl = document.getElementById("dip-warning");
-          priceEl.textContent = formatPrice(data.price_usd);
 
-          // Color green if above mean, red if below
-          if (priceMean !== null) {
-            priceEl.style.color = data.price_usd >= priceMean ? "#10b981" : "#ef4444";
-          }
+          if (data.price_usd) {
+            priceEl.textContent = formatPrice(data.price_usd);
 
-          // Show warning if below lower-half average
-          if (lowerHalfMean !== null && priceHistory.length >= 2) {
-            if (data.price_usd < lowerHalfMean) {
-              warningEl.classList.add("show");
-            } else {
-              warningEl.classList.remove("show");
+            if (priceMean !== null) {
+              priceEl.style.color = data.price_usd >= priceMean ? "#10b981" : "#ef4444";
+            }
+
+            if (lowerHalfMean !== null && priceHistory.length >= 2) {
+              warningEl.classList.toggle("show", data.price_usd < lowerHalfMean);
+            }
+
+            if (priceHistory.length >= 2) {
+              const pct = calculatePercentile(priceHistory, data.price_usd);
+              document.getElementById("percentile").textContent = pct + "%";
             }
           }
 
-          // Calculate and show percentile
-          if (priceHistory.length >= 2) {
-            const pct = calculatePercentile(priceHistory, data.price_usd);
-            document.getElementById("percentile").textContent = pct + "%";
-          }
-
-          document.getElementById("last-update").textContent = "Last update: " + data.timestamp;
+          document.getElementById("last-update").textContent = "Last update: " + (data.timestamp || "N/A");
           updateChart();
         });
     }
 
-    // Countdown timer
-    let countdown = 60;
+    function selectCoin(symbol) {
+      currentSymbol = symbol;
+      document.querySelectorAll(".coin-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.symbol === symbol);
+      });
+      priceMean = null;
+      lowerHalfMean = null;
+      priceHistory = [];
+      document.getElementById("current-price").textContent = "Loading...";
+      document.getElementById("dip-warning").classList.remove("show");
+      updatePrice();
+    }
 
+    document.querySelectorAll(".coin-btn").forEach(btn => {
+      btn.addEventListener("click", () => selectCoin(btn.dataset.symbol));
+    });
+
+    let countdown = 60;
     function updateCountdown() {
       countdown--;
       document.getElementById("countdown").textContent = countdown;
@@ -316,15 +348,11 @@ function() {
       }
     }
 
-    // Initial load
     updatePrice();
-
-    // Tick countdown every second
     setInterval(updateCountdown, 1000);
   </script>
 </body>
 </html>
-', ifelse(is.na(current_price), "Loading...", format(current_price, big.mark = ",", nsmall = 2)))
-
+'
   html
 }
