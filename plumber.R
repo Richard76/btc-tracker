@@ -181,6 +181,8 @@ function() {
   </div>
 
   <script>
+    let priceMean = null;
+
     function formatPrice(price) {
       return "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
@@ -190,17 +192,21 @@ function() {
         .then(r => r.json())
         .then(data => {
           const history = data.history;
-          if (!history || history.timestamp.length === 0) return;
+          if (!history) return;
 
-          const timestamps = history.timestamp;
-          const prices = history.price;
+          const timestamps = history.timestamp || [];
+          const prices = history.price || [];
 
           // Update stats
           document.getElementById("data-points").textContent = data.data_points;
           if (prices.length > 0) {
             document.getElementById("high-price").textContent = formatPrice(Math.max(...prices));
             document.getElementById("low-price").textContent = formatPrice(Math.min(...prices));
+            // Calculate mean for color coding
+            priceMean = prices.reduce((a, b) => a + b, 0) / prices.length;
           }
+
+          if (timestamps.length === 0) return;
 
           // Plot chart
           const trace = {
@@ -237,7 +243,12 @@ function() {
       fetch("/price")
         .then(r => r.json())
         .then(data => {
-          document.getElementById("current-price").textContent = formatPrice(data.price_usd);
+          const priceEl = document.getElementById("current-price");
+          priceEl.textContent = formatPrice(data.price_usd);
+          // Color green if above mean, red if below
+          if (priceMean !== null) {
+            priceEl.style.color = data.price_usd >= priceMean ? "#10b981" : "#ef4444";
+          }
           document.getElementById("last-update").textContent = "Last update: " + data.timestamp;
           updateChart();
         });
