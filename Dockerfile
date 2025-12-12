@@ -1,12 +1,13 @@
 # BTC Price Tracker - Dockerfile
 FROM rocker/r-ver:4.3.0
 
-# Install system dependencies
+# Install system dependencies (including curl for API calls)
 RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libssl-dev \
     zlib1g-dev \
     libsodium-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install R packages
