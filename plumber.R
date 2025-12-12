@@ -168,8 +168,9 @@ get_cached_stats <- function(symbol, range, currency = "USD") {
   stats_cache[[key]]
 }
 
-# Initialize cache on startup
-refresh_cache()
+# Skip cache on startup - load lazily on first request
+# This allows the server to start immediately and pass health checks
+message("Server starting - cache will load on first request")
 
 #* @apiTitle Crypto Price Tracker
 #* @apiDescription Multi-coin price tracking with Supabase storage and pre-cached stats
